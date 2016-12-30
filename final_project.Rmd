@@ -1,0 +1,144 @@
+---
+title: "Practical Machine Learning Project"
+author: "Hoang Viet Tran"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+Using devices such as *Jawbone Up*, *Nike FuelBand*, and *Fitbit* it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here:[linked phrase] (http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+## Goals of the project
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+## Data Analysis
+### Getting the Data
+
+**Read two datasets directly from urls**
+
+```{r}
+library(caret)
+library(rattle)
+library(tidyr)
+url_train<-"http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test<-"http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#Read csv
+training<-read.csv(url(url_train), na.strings = c("NA","#DIV/0!",""))
+testing<-read.csv(url(url_test), na.strings = c("NA","#DIV/0!",""))
+```
+
+**Split the training dataset into two parts**
+
+```{r}
+#Partitioning the training set into two parts
+set.seed(1234)
+inTrain<-createDataPartition(y=training$classe,p=0.6, list=FALSE)
+myTraining<-training[inTrain,]
+myTesting<-training[-inTrain,]
+```
+
+**Cleaning the data**
+```{r}
+#Remove near zero variables
+nzv_train<-nearZeroVar(myTraining, saveMetrics = TRUE)
+myTraining<-myTraining[,nzv_train$nzv==FALSE]
+nzv_test<-nearZeroVar(myTesting, saveMetrics = TRUE)
+myTesting<-myTesting[,nzv_test$nzv==FALSE]
+
+#Remove the first column
+myTraining<-myTraining[c(-1)]
+
+#Remove column with more than 60% 
+myTrainingTemp<-myTraining
+for (i in 1:length(myTraining)) {
+  if (sum(is.na(myTraining[,i]))/nrow(myTraining) >= .6) {
+    for (j in 1:length(myTrainingTemp)) {
+      if (length(grep(names(myTraining[i]),names(myTrainingTemp)[j]))==1) {
+        myTrainingTemp<-myTrainingTemp[,-j]
+      }
+    }
+  }
+}
+myTraining<-myTrainingTemp
+rm(myTrainingTemp)
+
+#Apply same filter to myTesting and testing dataset
+clean1<-colnames(myTraining)
+clean2<-colnames(myTraining[,-58])
+myTesting<-myTesting[clean1]
+testing<-testing[clean2]
+
+#Coerce class type in testing to be the same as myTraining
+for (i in 1:length(testing)) {
+  for (j in 1:length(myTraining)) {
+    if (length(grep(names(myTraining[i]),names(testing)[j]))==1) {
+      class(testing[i])<-class(myTraining[j])
+    }
+  }
+}
+
+# To get the same class between testing and myTraining
+testing <- rbind(myTraining[2, -58] , testing)
+testing <- testing[-1,]
+dim(myTraining); dim(myTesting); dim(testing)
+```
+
+### Exploratory Data Analysis
+
+```{r}
+hist(as.numeric(myTraining$classe))
+```
+
+### Prediction using Decision Trees
+
+**Fitting model**
+```{r}
+modFit1<-train(classe~.,data=myTraining,method="rpart")
+fancyRpartPlot(modFit1$finalModel)
+```
+**Predicting and Validating on myTesting dataset**
+```{r}
+pred1<-predict(modFit1,myTesting)
+cM1<-confusionMatrix(pred1,myTesting$classe)
+cM1
+plot(cM1$table,col=cM1$byClass)
+```
+
+### Prediction using Random Forests
+**Fitting model**
+```{r}
+modFit2<-train(classe~.,data=myTraining,method="rf",trControl=trainControl(method = "cv"))
+```
+**Predicting and Validating on myTesting dataset**
+```{r}
+pred2<-predict(modFit2,myTesting)
+cM2<-confusionMatrix(pred2,myTesting$classe)
+cM2
+plot(cM2$table,col=cM2$byClass)
+plot(modFit2$finalModel)
+```
+
+### Prediction using Generalize Boosted Regression
+**Fitting model**
+```{r}
+modFit3<-train(classe~.,data=myTraining,method="gbm",trControl=trainControl(method = "cv"),verbose = FALSE)
+```
+**Predicting and Validating on myTesting dataset**
+```{r}
+pred3<-predict(modFit3,myTesting)
+cM3<-confusionMatrix(pred3,myTesting$classe)
+cM3
+plot(cM3$table,col=cM3$byClass)
+plot(modFit3)
+```
+
+### Predicting result on test data
+```{r}
+pred4<-predict(modFit2,testing)
+pred4
+```
